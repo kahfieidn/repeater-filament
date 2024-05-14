@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Models\Formulir;
 use App\Models\Persyaratan;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -17,5 +18,10 @@ class Perizinan extends Model
     public function persyaratan()
     {
         return $this->hasMany(Persyaratan::class);
+    }
+
+    public function formulir()
+    {
+        return $this->hasMany(Formulir::class);
     }
 }

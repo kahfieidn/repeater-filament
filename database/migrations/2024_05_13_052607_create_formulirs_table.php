@@ -11,13 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('permohonans', function (Blueprint $table) {
+        Schema::create('formulirs', function (Blueprint $table) {
             $table->id();
             $table->foreignId('perizinan_id')->constrained();
-            $table->foreignId('user_id')->constrained();
-            $table->json('formulir');
-            $table->json('berkas');
-            $table->enum('status', ['pending', 'revision', 'approved'])->default('pending');
+            $table->string('nama_formulir');
+            $table->enum('type', ['string', 'date', 'select']);
+            $table->json('value')->nullable();
             $table->timestamps();
         });
     }
@@ -27,6 +26,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('permohonans');
+        Schema::dropIfExists('formulirs');
     }
 };

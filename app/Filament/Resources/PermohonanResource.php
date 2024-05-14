@@ -6,6 +6,7 @@ use Filament\Forms;
 use Filament\Tables;
 use Filament\Forms\Get;
 use Filament\Forms\Set;
+use App\Models\Formulir;
 use Filament\Forms\Form;
 use App\Models\Perizinan;
 use App\Models\Permohonan;
@@ -14,8 +15,10 @@ use App\Models\Persyaratan;
 use Filament\Resources\Resource;
 use Illuminate\Support\Collection;
 use Filament\Forms\Components\Select;
+use Filament\Forms\Components\Wizard;
 use Filament\Forms\Components\Section;
 use Filament\Forms\Components\Repeater;
+use Filament\Forms\Components\TextInput;
 use Illuminate\Database\Eloquent\Builder;
 use NunoMaduro\Collision\Adapters\Phpunit\State;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
@@ -34,48 +37,71 @@ class PermohonanResource extends Resource
     {
         return $form
             ->schema([
-                Section::make('Data Permohonan')
-                    ->schema([
-                        Forms\Components\Select::make('perizinan_id')
-                            ->relationship(name: 'perizinan', titleAttribute: 'nama_perizinan')
-                            ->preload()
-                            ->live()
-                            ->afterStateUpdated(function (Set $set) {
-                                $set('berkas.*.nama_persyaratan', '');
-                                $set('berkas.*.file', null);
-                            })
-                            ->required(),
-                        Forms\Components\TextInput::make('nama_pemohon')
-                            ->required(),
-                    ]),
-                Section::make('Berkas')
-                    ->schema([
-                        Repeater::make('berkas')
-                            ->schema(function (Get $get): array {
-                                $selectedOptions = collect($get('berkas.*.nama_persyaratan'))->filter();
-                                return [
-                                    Select::make('nama_persyaratan')
-                                        ->options(function () use ($get) {
-                                            $data = Persyaratan::whereIn('perizinan_id', function ($query) use ($get) {
-                                                $query->select('perizinan_id')
-                                                    ->from('perizinans')
-                                                    ->where('perizinan_id', $get('perizinan_id'));
-                                            })->pluck('nama_persyaratan', 'id');
-                                            return $data;
-                                        })
-                                        ->disableOptionWhen(function ($value, $state, Get $get) use ($selectedOptions) {
-                                            return $selectedOptions->contains($value);
-                                        })
-                                        ->live()
-                                        ->preload(),
-                                    Forms\Components\FileUpload::make('file')
-                                        ->required()
-                                        ->openable()
-                                        ->appendFiles()
-                                        ->directory('berkas'),
-                                ];
-                            }),
-                    ])
+
+                Wizard::make([
+                    Wizard\Step::make('Pilih Jenis Perizinan')
+                        ->schema([
+                            Forms\Components\Select::make('perizinan_id')
+                                ->relationship(name: 'perizinan', titleAttribute: 'nama_perizinan')
+                                ->preload()
+                                ->live()
+                                ->searchable()
+                                ->afterStateUpdated(function (Set $set) {
+                                    $set('berkas.*.nama_persyaratan', '');
+                                    $set('berkas.*.file', null);
+                                })
+                                ->required(),
+                        ]),
+                    Wizard\Step::make('Unggah Berkas')
+                        ->schema([
+                            Repeater::make('berkas')
+                                ->schema(function (Get $get): array {
+                                    $selectedOptions = collect($get('berkas.*.nama_persyaratan'))->filter();
+                                    return [
+                                        Select::make('nama_persyaratan')
+                                            ->options(function () use ($get) {
+                                                $data = Persyaratan::whereIn('perizinan_id', function ($query) use ($get) {
+                                                    $query->select('perizinan_id')
+                                                        ->from('perizinans')
+                                                        ->where('perizinan_id', $get('perizinan_id'));
+                                                })->pluck('nama_persyaratan', 'id');
+                                                return $data;
+                                            })
+                                            ->disableOptionWhen(function ($value, $state, Get $get) use ($selectedOptions) {
+                                                return $selectedOptions->contains($value);
+                                            })
+                                            ->live()
+                                            ->preload(),
+                                        Forms\Components\FileUpload::make('file')
+                                            ->required()
+                                            ->openable()
+                                            ->appendFiles()
+                                            ->directory('berkas'),
+                                    ];
+                                })->columns(2),
+                        ]),
+                    Wizard\Step::make('Formulir')
+                        ->schema(function (Get $get): array {
+                            $options = Formulir::whereIn('perizinan_id', function ($query) use ($get) {
+                                $query->select('perizinan_id')
+                                    ->from('formulirs')
+                                    ->where('perizinan_id', $get('perizinan_id'));
+                            })->get();
+
+                            $selectOptions = [];
+                            foreach ($options as $key => $option) {
+                                if ($option->type == 'string') {
+                                    $selectOptions[$option->nama_formulir] = Forms\Components\TextInput::make('formulir.' . $option->nama_formulir);
+                                } else if ($option->type == 'date') {
+                                    $selectOptions[$option->nama_formulir] = Forms\Components\DatePicker::make('formulir.' . $option->nama_formulir);
+                                }
+                            }
+                            return [
+                                ...$selectOptions
+                            ];
+                        })->columns(2),
+                ])->columnSpanFull(),
+
             ]);
     }
 
@@ -83,10 +109,12 @@ class PermohonanResource extends Resource
     {
         return $table
             ->columns([
-                Tables\Columns\TextColumn::make('perizinan_id')
+                Tables\Columns\TextColumn::make('perizinan.nama_perizinan')
                     ->numeric()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('nama_pemohon')
+                Tables\Columns\TextColumn::make('user.name')
+                    ->searchable(),
+                Tables\Columns\TextColumn::make('status')
                     ->searchable(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
@@ -102,7 +130,8 @@ class PermohonanResource extends Resource
             ])
             ->actions([
                 Tables\Actions\ViewAction::make(),
-                Tables\Actions\EditAction::make(),
+                Tables\Actions\EditAction::make()
+                ->disabled(fn ($record) => in_array($record->status, ['pending'])),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
@@ -127,4 +156,5 @@ class PermohonanResource extends Resource
             'edit' => Pages\EditPermohonan::route('/{record}/edit'),
         ];
     }
+
 }
